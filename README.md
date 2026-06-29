@@ -1,2 +1,142 @@
-# TFG-Matematicas
-A CBR-RAG method that translates any type of graph (statistical, XAI, etc.) into accessible and educational textual explanations.
+# Automatic Interpretation of Statistical Graphs Using Generative AI Models
+
+This repository contains the source code and evaluation frameworks for a **Bachelor's Thesis (Trabajo de Fin de Grado)** in Mathematics at the Complutense University of Madrid (UCM).
+
+The project introduces an architecture that combines **Case-Based Reasoning (CBR)** and **Retrieval-Augmented Generation (RAG)** and is powered by Multimodal Large Language Models (MLLMs), to translate any type of graph (statistical, XAI, etc.) into accessible and educational textual explanations.
+
+This repository builds upon my previous Computer Engineering Bachelor's Thesis, evolving its architecture to process graphs of any kind (rather than just XAI) and to generate accessible and educational textual explanations for users of any background (instead of technical and descriptive explanations). To build the custom dataset for this project, the XAI cases were extracted and adapted from the Computer Engineering dataset. Additionally, a direct comparison between both projects will be conducted within the evaluation framework.
+
+
+
+## Overview
+
+Rather than just a software system, this repository provides a complete research and development framework. It is structured around the following key contributions:
+
+1. **A Custom Multimodal Dataset:** A custom-built dataset linking a wide variety of graphs (statistical, XAI, etc.) with their contextual metadata and structured textual explanations.
+2. **The Core System (CBR-RAG):** A hybrid architecture that translates graphs into accessible and educational textual explanations by leveraging a CBR-RAG architecture and Multimodal Large Language Models (MLLMs).
+3. **Evaluation Framework:** The scripts and data necessary to replicate the two-phase evaluation of the system: an automated offline Leave-One-Out Validation and an online Human-in-the-Loop survey.
+4. **Auxiliary Files:** A suite of scripts designed to build, populate, and summarize the multimodal Case Base from scratch.
+
+
+
+## System Pipeline (Execution Flow)
+
+When a new query (graph) is fed into the system, the execution follows a clear, 6-step practical pipeline:
+
+1. **Case Base Initialization:** The system lazy-loads the custom multimodal dataset, acting as the memory of the system (including images, text embeddings, and visual embeddings).
+2. **Retrieval (MAC/FAC):** The system searches for similar prior cases. It first applies a strict metadata filter (MAC) to drop incompatible graphs, and then calculates a combined tabular and visual similarity score (FAC) to retrieve the best matches.
+3. **Generation (Reuse):** A dynamic few-shot prompt is constructed using the retrieved cases as *fictional placeholders*. This context guides local vision-capable LLMs (Pixtral, Qwen, Idefics) to generate their initial analytical explanations without cross-contaminating data.
+4. **Hallucination Detection (Revise):** A strict sequential cascade pipeline evaluates the generated texts to drop factually incorrect claims. It uses JinaCLIP (Cross-Modal) to verify visual fidelity against the graph, and EigenScore (Cross-Output) to check semantic consensus among the models.
+5. **Synthesis:** A final summarizer (Gemma 4 31B) unifies the surviving valid insights into a single, coherent, and deduplicated natural language explanation.
+6. **Retention (Retain):** To close the CBR cycle, the newly resolved case (combining the original graph, its metadata, and the synthesized final explanation) is stored back into the Case Base. This allows the system to continuously expand its knowledge and improve future query resolutions.
+
+
+
+## File Structure
+
+The project is structured into three main directories: case base creation files (`case_base_creation`), evaluation (`evaluation`), and the core system (`graph_cbr_rag`).
+
+    TFG-Matematicas/
+    ├── case_base_creation/                         # Scripts to generate the Seed Case Base
+    │   ├── xai_images/                             # XAI graph image files (.png) from Computer Engineering project
+    │   ├── case_base_xai.csv                       # Central Case Base registry from Computer Engineering project
+    │   ├── gen_case_base_descriptions_llm.py       # Generates zero-shot baseline insights
+    │   ├── gen_embed_text.py                       # Generates text embeddings for domain and task    
+    │   ├── gen_embed_visual.py                     # Generates visual embeddings for the images
+    │   ├── generate_statistical_graphs.py          # Synthetic case generation for statistical graphs
+    │   ├── merge_outputs_case_base.py              # Consolidates individual LLM outputs into the central registry
+    │   ├── original_50_xai_cases.csv               # Values of the 50 extracted cases from case_base_xai.csv for this project
+    │   ├── raw_case_outputs.csv                    # Individual outputs generated by the base LLMs
+    │   ├── summarize_case_base.py                  # Synthesizes baseline explanations into a final explanation
+    │   ├── update_taxonomy.py                      # Updates the hierarchy established for the graphs in the case base
+    │   └── xai_cases_extraction.ipynb              # Randomly chooses and adapts 50 cases from case_base_xai.csv for this project
+    │
+    ├── evaluation/                                 # Offline and Online evaluation framework
+    │   ├── data/
+    │   │   ├── embeddings/                         # Computed embeddings for evaluation
+    │   │   │   ├── idefics/ 
+    │   │   │   ├── images/
+    │   │   │   ├── pixtral/
+    │   │   │   ├── qwen/
+    │   │   │   ├── rag_solution/
+    │   │   │   └── summary/
+    │   │   ├── processed/
+    │   │   │   └── similarity_scores.csv           # Final cosine similarity scores
+    │   │   └── raw/
+    │   │       ├── original_50_xai_cases.csv       # Values of the 50 extracted cases from case_base_xai.csv for this project
+    │   │       ├── pixtral_rag_insights_xai.csv    # Outputs generated during the offline evaluation of the Computer Engineering project
+    │   │       └── pixtral_rag_insights.csv        # Outputs generated during the offline evaluation
+    │   └── src/
+    │       ├── evaluation.ipynb                    # Offline evaluation metrics & graphs
+    │       ├── generate_embeddings.py              # Generates embeddings for evaluation
+    │       ├── run_leave_one_out.py                # Leave-One-Out execution script
+    │       └── user_evaluation.ipynb               # Notebook for randomizing online test samples (for online evaluation)
+    │
+    └── graph_cbr_rag/                              # CORE SYSTEM SOURCE CODE
+        ├── data/
+        │   ├── processed/                          # Active Case Base and Vector Cache
+        │   │   ├── embeddings_domain/
+        │   │   ├── embeddings_task/
+        │   │   ├── embeddings_visual/
+        │   │   └── case_base.csv                   # The central Case Base registry
+        │   └── raw/
+        │       └── images/                         # Graph image files (.png)
+        └── src/                                
+            ├── hallucination_detection/            # Revise stage: Hallucination filtering
+            │   ├── cross_modal/                    # Visual-Text fidelity checks (Jina CLIP)
+            │   ├── cross_output/                   # Output consensus checks (EigenScore)
+            │   └── manager.py
+            ├── llms/                               # Local MLLM Providers (Reuse stage)
+            │   ├── providers/                      # Implementations for Idefics, Pixtral, Qwen
+            │   ├── base_provider.py
+            │   ├── config.py
+            │   └── orchestrator.py
+            ├── prompts/                            # Prompt Engineering and few-shot formatting
+            │   └── prompt_builder.py
+            ├── retrieval/                          # Retrieve stage: MAC/FAC architecture
+            │   ├── engines/                        # Strict filter, Tabular, Visual, and Fusion scoring
+            │   ├── config.py
+            │   ├── manager.py                      # Case Base and Lazy-loading Cache Manager
+            │   ├── orchestrator.py
+            │   └── schemas.py                      # Pydantic data types for queries and retrieved cases
+            ├── summarizer/                         # Revise stage: Final synthesis
+            │   ├── implementations/                # Including Gemma 4 31B
+            │   ├── base.py
+            │   ├── manager.py
+            │   └── prompts.py
+            └── main_rag.py                         # Main entry point orchestrating the CBR cycle
+
+
+
+## Key Technologies & Models
+
+*   **Graph Generation Libraries:** `seaborn`, `matplotlib`, `squarify`, `mplfinance`.
+*   **Generative Vision Models (MLLMs):** `Pixtral-12B`, `Qwen-3-VL-8B`, `Idefics3-8B` (that run locally).
+*   **Embeddings & Evaluation:** `JinaCLIP` (Cross-modal, runs locally), `ChartGemma` (Visual extraction, runs locally), `all-MiniLM-L6-v2` (Text extraction, runs locally), `Gemini Embedding 2` (Offline Evaluation, via Google AI Studio API).
+*   **Synthesis:** `Gemma 4 31B` (via Google AI Studio API).
+*   **Core Libraries:** `PyTorch`, `transformers`, `pandas`, `numpy`.
+
+
+
+## Execution Environment & Prerequisites
+
+### Dependencies
+Install the required Python packages using `pip`:
+
+    pip install torch transformers scikit-learn pandas numpy pillow tqdm typer jina-clip seaborn matplotlib squarify mplfinance
+
+*(Note: Some vision models and JinaCLIP may require specific CUDA toolkit versions or additional Hugging Face authentications).*
+
+### Kaggle Deployment
+Due to the significant hardware requirements of loading multiple Large Multimodal Models simultaneously, this project was deeply optimized for execution in resource-constrained educational clouds (e.g., **Kaggle** with dual NVIDIA Tesla T4 GPUs / 16GB VRAM). 
+* The system is structured to allow decoupling the **Retrieval** and **Generation** phases (see `run_leave_one_out.py`) to prevent `CUDA Out of Memory` errors.
+* File paths within the code are designed to be compatible with Kaggle's `/kaggle/input/...` read-only dataset semantics and `/kaggle/working/` output mechanics.
+
+
+
+## Author
+
+**Cameron Óscar Sánchez Bloomfield**  
+*Bachelor's Thesis in Mathematics*  
+Complutense University of Madrid (2025–2026)  
+Director: Miguel Isabel Márquez
